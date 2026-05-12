@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 (2026-05-12)
+
+### Fixes
+
+- Stack: `spacing` option now applied (contributed by @KennethLj)
+- Cite / Bibliography: `style` option now applied (CSL style name)
+- Figure: `separator` option now applied to captions
+- Table: `rows` option now applied (row sizing)
+- Columns: `gutter` option now applied
+- List: `marker` option now applied
+- Outline: `indent` option now applied
+- Release workflow no longer creates draft releases due to parallel job race condition
+
 ## 0.3.0 (2026-04-25)
 
 ### Content
