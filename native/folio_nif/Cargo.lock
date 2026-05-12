@@ -547,6 +547,7 @@ dependencies = [
  "comrak",
  "ecow",
  "fontdb",
+ "hayagriva",
  "rustler",
  "smallvec",
  "typed-arena",

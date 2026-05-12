@@ -13,12 +13,14 @@ use typst::layout::{
 };
 use typst::text::SpaceElem as TextSpace;
 use typst::model::{
-    Attribution, Bibliography, BibliographyElem, CitationForm, CiteElem, DividerElem,
-    EmphElem, EnumElem, EnumItem, FigureCaption, FigureElem, FootnoteBody, FootnoteElem,
-    HeadingElem, LinkElem, LinkTarget, ListElem, ListItem, OutlineElem, ParbreakElem,
-    QuoteElem, StrongElem, TableCell, TableChild, TableElem, TableHeader,
-    TableItem, TermItem, TermsElem, TitleElem,
+    Attribution, Bibliography, BibliographyElem, CitationForm, CiteElem, CslSource,
+    CslStyle, DividerElem, EmphElem, EnumElem, EnumItem, FigureCaption, FigureElem,
+    FootnoteBody, FootnoteElem, HeadingElem, LinkElem, LinkTarget, ListElem, ListItem,
+    ListMarker, OutlineElem, OutlineIndent, ParbreakElem, QuoteElem, StrongElem,
+    TableCell, TableChild, TableElem, TableHeader, TableItem, TermItem, TermsElem,
+    TitleElem,
 };
+use hayagriva::archive::ArchivedStyle;
 use typst::text::{
     FontWeight, HighlightElem, LinebreakElem, RawContent, RawElem, SmallcapsElem,
     StrikeElem, SubElem, SuperElem, TextElem, TextSize, UnderlineElem,
@@ -335,6 +337,14 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
                     _ => Some(CitationForm::Normal),
                 });
             }
+            if let Some(style_name) = &cite.style {
+                if let Some(archived) = ArchivedStyle::by_name(style_name) {
+                    let csl = CslStyle::from_archived(archived);
+                    elem = elem.with_style(Smart::Custom(typst::foundations::Derived::new(
+                        CslSource::Named(archived, None), csl,
+                    )));
+                }
+            }
             elem.pack()
         }
         ExContent::Bibliography(bib) => {
@@ -350,6 +360,14 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
             let mut elem = BibliographyElem::new(derived).with_full(bib.full);
             if let Some(title) = &bib.title {
                 elem = elem.with_title(Smart::Custom(Some(cc(engine, title))));
+            }
+            if let Some(style_name) = &bib.style {
+                if let Some(archived) = ArchivedStyle::by_name(style_name) {
+                    let csl = CslStyle::from_archived(archived);
+                    elem = elem.with_style(typst::foundations::Derived::new(
+                        CslSource::Named(archived, None), csl,
+                    ));
+                }
             }
             elem.pack()
         }
@@ -390,7 +408,11 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
         ExContent::Figure(fig) => {
             let mut e = FigureElem::new(cc(engine, &fig.body));
             if let Some(cap) = &fig.caption {
-                e = e.with_caption(Some(typst::foundations::Packed::new(FigureCaption::new(cc(engine, cap)))));
+                let mut caption = FigureCaption::new(cc(engine, cap));
+                if let Some(sep) = &fig.separator {
+                    caption = caption.with_separator(Smart::Custom(TextElem::packed(sep.as_str())));
+                }
+                e = e.with_caption(Some(typst::foundations::Packed::new(caption)));
             }
             if let Some(pl) = &fig.placement {
                 let va = match pl.as_str() {
@@ -474,7 +496,11 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
         // Layout
         ExContent::Columns(cols) => {
             let n = NonZeroUsize::new(cols.count as usize).unwrap_or(NonZeroUsize::MIN);
-            ColumnsElem::new(cc(engine, &cols.body)).with_count(n).pack()
+            let mut e = ColumnsElem::new(cc(engine, &cols.body)).with_count(n);
+            if let Some(g) = cols.gutter.as_deref().and_then(parse_rel) {
+                e = e.with_gutter(g);
+            }
+            e.pack()
         }
         ExContent::Colbreak(cb) => ColbreakElem::new().with_weak(cb.weak).pack(),
         ExContent::Pagebreak(pb) => PagebreakElem::new().with_weak(pb.weak).pack(),
@@ -629,6 +655,11 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
             if let Some(title) = &o.title {
                 e = e.with_title(Smart::Custom(Some(TextElem::packed(title.clone()))));
             }
+            if let Some(indent_str) = &o.indent {
+                if let Some(r) = parse_rel(indent_str) {
+                    e = e.with_indent(Smart::Custom(OutlineIndent::Rel(r)));
+                }
+            }
             if let Some(d) = o.depth {
                 e = e.with_depth(Some(NonZeroUsize::new(d as _).unwrap_or(NonZeroUsize::MIN)));
             }
@@ -682,6 +713,9 @@ fn convert_node(engine: &mut Engine, node: &ExContent) -> Content {
             }).collect();
             let mut elem = ListElem::new(items);
             elem.tight.set(list.tight);
+            if let Some(marker) = &list.marker {
+                elem = elem.with_marker(ListMarker::Content(vec![TextElem::packed(marker.as_str())]));
+            }
             elem.pack()
         }
         ExContent::ListItem(li) => ListItem::new(cc(engine, &li.body)).pack(),
@@ -780,6 +814,11 @@ fn convert_table(engine: &mut Engine, tbl: &crate::types::ExTable) -> Content {
     }
 
     let mut elem = TableElem::new(children).with_columns(cols);
+    if let Some(row_specs) = &tbl.rows {
+        if let Some(r) = parse_rel(row_specs) {
+            elem = elem.with_rows(TrackSizings(smallvec::smallvec![Sizing::Rel(r)]));
+        }
+    }
     if let Some(g) = &tbl.gutter {
         if let Some(r) = parse_rel(g) {
             elem = elem.with_row_gutter(TrackSizings(smallvec::smallvec![Sizing::Rel(r)]));
